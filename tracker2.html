@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eos Balloon Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.18);
+    --text: #e8eaf0; --text2: #8890a8; --text3: #4a5070;
+    --accent: #4f9cf9; --green: #5cb87a; --red: #e05c5c;
+    --orange: #e0935c; --purple: #a07ae0; --teal: #5cb8b2;
+    --font: 'IBM Plex Sans', sans-serif; --mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; display:flex; flex-direction:column; height:100vh; }
+
+  /* Header */
+  header { display:flex; align-items:center; gap:10px; padding:9px 16px; border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
+  .logo { font-family:var(--mono); font-size:13px; color:var(--text2); white-space:nowrap; margin-right:4px; }
+  .logo strong { color:var(--accent); }
+
+  .balloon-tabs { display:flex; gap:5px; }
+  .balloon-tab { padding:5px 14px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--text2); font-family:var(--mono); font-size:12px; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+  .balloon-tab:hover { border-color:var(--accent); color:var(--text); }
+  .balloon-tab.active { background:rgba(79,156,249,0.15); border-color:var(--accent); color:var(--accent); font-weight:500; }
+  .balloon-tab .tab-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; background:var(--text3); vertical-align:middle; }
+  .balloon-tab.has-data .tab-dot { background:var(--green); }
+  .balloon-tab.active .tab-dot { background:var(--accent); }
+
+  #status-bar { display:flex; align-items:center; gap:7px; margin-left:auto; }
+  #status-dot { width:7px; height:7px; border-radius:50%; background:var(--text3); flex-shrink:0; }
+  #status-dot.live { background:var(--green); animation:blink 1.5s infinite; }
+  #status-dot.stale { background:var(--orange); }
+  #status-dot.error { background:var(--red); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  #status-text { font-family:var(--mono); font-size:11px; color:var(--text2); }
+  #countdown { font-family:var(--mono); font-size:11px; color:var(--text3); min-width:70px; text-align:right; }
+
+  button.icon-btn { background:transparent; border:1px solid var(--border2); border-radius:6px; color:var(--text2); padding:4px 9px; font-size:13px; cursor:pointer; transition:all 0.15s; }
+  button.icon-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  /* Layout */
+  main { flex:1; display:flex; overflow:hidden; }
+
+  /* Sidebar */
+  #sidebar { width:220px; min-width:200px; border-right:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; flex-shrink:0; }
+  .stat-section { border-bottom:1px solid var(--border); padding:12px 14px; }
+  .stat-section h3 { font-family:var(--mono); font-size:9px; letter-spacing:0.12em; color:var(--text3); text-transform:uppercase; margin-bottom:9px; }
+  .stat-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }
+  .stat-label { font-size:11px; color:var(--text2); }
+  .stat-val { font-family:var(--mono); font-size:14px; font-weight:500; color:var(--text); }
+  .stat-val.big { font-size:22px; }
+  .stat-unit { font-size:10px; color:var(--text3); margin-left:1px; }
+
+  .phase-badge { display:inline-block; padding:2px 10px; border-radius:20px; font-family:var(--mono); font-size:11px; font-weight:500; background:var(--surface2); color:var(--text2); border:1px solid var(--border2); }
+  .phase-badge.ascending  { background:rgba(79,156,249,0.15);  color:var(--accent);  border-color:var(--accent); }
+  .phase-badge.descending { background:rgba(224,147,92,0.15);  color:var(--orange);  border-color:var(--orange); }
+  .phase-badge.landed     { background:rgba(92,184,122,0.15);  color:var(--green);   border-color:var(--green); }
+  .phase-badge.burst      { background:rgba(224,92,92,0.15);   color:var(--red);     border-color:var(--red); }
+
+  .alt-bar-bg { height:4px; background:var(--surface2); border-radius:2px; overflow:hidden; margin:6px 0 3px; }
+  .alt-bar-fill { height:100%; background:var(--accent); border-radius:2px; transition:width 0.5s; }
+  .alt-bar-labels { display:flex; justify-content:space-between; font-family:var(--mono); font-size:9px; color:var(--text3); }
+
+  #landing-section { display:none; }
+  .landing-coords { font-family:var(--mono); font-size:11px; color:var(--teal); line-height:1.7; white-space:pre; }
+
+  #chart-section { padding:12px 14px; flex:1; min-height:140px; }
+  #alt-chart { width:100%; height:120px; }
+
+  /* Map */
+  #map-wrap { flex:1; position:relative; min-width:0; }
+  #map { width:100%; height:100%; }
+  .leaflet-tile-pane { filter:brightness(0.72) saturate(0.65); }
+  .leaflet-container { background:var(--bg); }
+
+  .b-icon { width:34px; height:34px; display:flex; align-items:center; justify-content:center; font-size:22px; filter:drop-shadow(0 2px 5px rgba(0,0,0,0.7)); animation:float 3s ease-in-out infinite; }
+  .b-icon.still { animation:none; }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+  .sm-icon { width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+
+  #empty-state { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; pointer-events:none; z-index:1000; background:rgba(15,17,23,0.65); }
+  #empty-state .big { font-size:52px; opacity:0.35; }
+  #empty-state p { font-family:var(--mono); font-size:13px; color:var(--text2); }
+
+  /* API Key Modal */
+  #apikey-modal { position:fixed; inset:0; z-index:2000; background:rgba(0,0,0,0.75); display:flex; align-items:center; justify-content:center; }
+  #apikey-modal.hidden { display:none; }
+  .modal-box { background:var(--surface); border:1px solid var(--border2); border-radius:12px; padding:28px 32px; max-width:400px; width:90%; }
+  .modal-box h2 { font-size:16px; font-weight:500; margin-bottom:8px; }
+  .modal-box p { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:16px; }
+  .modal-box a { color:var(--accent); }
+  .modal-box input { width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:6px; padding:8px 12px; font-family:var(--mono); font-size:13px; outline:none; margin-bottom:12px; }
+  .modal-box input:focus { border-color:var(--accent); }
+  .modal-box button.save { width:100%; background:var(--accent); color:#fff; border:none; border-radius:6px; padding:8px; font-family:var(--font); font-size:14px; font-weight:500; cursor:pointer; }
+  .modal-box button.save:hover { opacity:0.85; }
+  .modal-note { font-size:11px; color:var(--text3); margin-top:10px; font-family:var(--mono); text-align:center; }
+
+  /* Leaflet popup */
+  .leaflet-popup-content-wrapper { background:var(--surface) !important; border:1px solid var(--border2) !important; border-radius:8px !important; color:var(--text) !important; font-family:var(--mono) !important; font-size:12px !important; box-shadow:none !important; }
+  .leaflet-popup-tip { background:var(--surface) !important; }
+  .leaflet-popup-content { margin:10px 14px !important; line-height:1.8; }
+  .leaflet-popup-close-button { color:var(--text2) !important; }
+
+  @media (max-width:580px) {
+    #sidebar { width:170px; min-width:155px; }
+    .stat-val.big { font-size:18px; }
+    .balloon-tab { padding:4px 9px; font-size:11px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- API Key Modal -->
+<div id="apikey-modal">
+  <div class="modal-box">
+    <h2>🎈 Eos Balloon Tracker</h2>
+    <p>Enter your <a href="https://aprs.fi/page/api" target="_blank">aprs.fi API key</a> to begin tracking.<br>It's free — sign up at <a href="https://aprs.fi/page/api" target="_blank">aprs.fi/page/api</a>.</p>
+    <input type="text" id="apikey-input" placeholder="paste your aprs.fi API key" autocomplete="off" spellcheck="false"/>
+    <button class="save" id="apikey-save-btn">Start tracking →</button>
+    <div class="modal-note">stored only in your browser · never sent anywhere except aprs.fi</div>
+  </div>
+</div>
+
+<header>
+  <div class="logo"><strong>Eos</strong> Tracker</div>
+  <div class="balloon-tabs">
+    <button class="balloon-tab active" data-cs="KJ6DYP-11" onclick="selectBalloon('KJ6DYP-11')"><span class="tab-dot"></span>Dawn · -11</button>
+    <button class="balloon-tab"        data-cs="KJ6DYP-12" onclick="selectBalloon('KJ6DYP-12')"><span class="tab-dot"></span>Dusk · -12</button>
+    <button class="balloon-tab"        data-cs="KJ6DYP-13" onclick="selectBalloon('KJ6DYP-13')"><span class="tab-dot"></span>Midnight · -13</button>
+  </div>
+  <div id="status-bar">
+    <div id="status-dot"></div>
+    <span id="status-text">waiting for API key</span>
+  </div>
+  <span id="countdown"></span>
+  <button class="icon-btn" id="refresh-btn" title="Refresh now">↻</button>
+  <button class="icon-btn" id="apikey-btn" style="font-size:11px;" title="Change API key">key</button>
+</header>
+
+<main>
+  <div id="sidebar">
+    <div class="stat-section">
+      <h3>Flight phase</h3>
+      <span class="phase-badge" id="phase-badge">waiting</span>
+    </div>
+    <div class="stat-section">
+      <h3>Altitude</h3>
+      <div class="stat-row">
+        <span class="stat-label">current</span>
+        <span class="stat-val big" id="stat-alt">–<span class="stat-unit">m</span></span>
+      </div>
+      <div class="alt-bar-bg"><div class="alt-bar-fill" id="alt-bar" style="width:0%"></div></div>
+      <div class="alt-bar-labels"><span>0</span><span>35 km</span></div>
+      <div class="stat-row" style="margin-top:8px">
+        <span class="stat-label">max recorded</span>
+        <span class="stat-val" id="stat-maxalt">–<span class="stat-unit">m</span></span>
+      </div>
+    </div>
+    <div class="stat-section">
+      <h3>Motion</h3>
+      <div class="stat-row"><span class="stat-label">vert rate</span><span class="stat-val" id="stat-vrate">–<span class="stat-unit">m/s</span></span></div>
+      <div class="stat-row"><span class="stat-label">ground spd</span><span class="stat-val" id="stat-speed">–<span class="stat-unit">km/h</span></span></div>
+      <div class="stat-row"><span class="stat-label">heading</span><span class="stat-val" id="stat-heading">–<span class="stat-unit">°</span></span></div>
+    </div>
+    <div class="stat-section">
+      <h3>Position</h3>
+      <div class="stat-row"><span class="stat-label">lat</span><span class="stat-val" id="stat-lat" style="font-size:12px">–</span></div>
+      <div class="stat-row"><span class="stat-label">lon</span><span class="stat-val" id="stat-lon" style="font-size:12px">–</span></div>
+      <div class="stat-row"><span class="stat-label">last fix</span><span class="stat-val" id="stat-time" style="font-size:11px">–</span></div>
+    </div>
+    <div class="stat-section" id="landing-section">
+      <h3>Est. landing zone</h3>
+      <div class="landing-coords" id="landing-coords"></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:5px;font-family:var(--mono)">linear extrapolation</div>
+    </div>
+    <div id="chart-section">
+      <h3 style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Altitude vs time</h3>
+      <canvas id="alt-chart"></canvas>
+    </div>
+  </div>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="empty-state">
+      <div class="big">🎈</div>
+      <p>select a balloon · waiting for first position</p>
+    </div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const BALLOONS = {
+  'KJ6DYP-11': { name:'Dawn',     color:'#4f9cf9' },
+  'KJ6DYP-12': { name:'Dusk',     color:'#e0935c' },
+  'KJ6DYP-13': { name:'Midnight', color:'#a07ae0' }
+};
+const REFRESH_SEC = 15, MAX_ALT = 35000;
+
+let apiKey = localStorage.getItem('aprsfi_key') || '';
+let activeCS = 'KJ6DYP-11';
+
+// Per-balloon accumulated tracks (survive tab switches; reset on page reload)
+const tracks = {};
+const mapObjs = {};
+Object.keys(BALLOONS).forEach(cs => {
+  tracks[cs]  = { points: [], maxAlt: 0 };
+  mapObjs[cs] = { track: null, balloon: null, launch: null, landing: null };
+});
+
+let refreshTimer = null, countdown = 0;
+
+// ── Map ────────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'© OpenStreetMap contributors', maxZoom:19
+}).addTo(map);
+map.setView([37.8, -122.25], 9);
+
+// ── Chart ──────────────────────────────────────────────────────────────────
+const altChart = new Chart(document.getElementById('alt-chart').getContext('2d'), {
+  type: 'line',
+  data: { labels:[], datasets:[{ data:[], borderColor:'#4f9cf9', backgroundColor:'rgba(79,156,249,0.08)', borderWidth:1.5, pointRadius:0, fill:true, tension:0.3 }] },
+  options: {
+    responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{ legend:{display:false} },
+    scales: {
+      x:{ ticks:{color:'#4a5070',font:{family:"'IBM Plex Mono'",size:9},maxTicksLimit:4,maxRotation:0}, grid:{color:'rgba(255,255,255,0.04)'}, border:{color:'rgba(255,255,255,0.08)'} },
+      y:{ ticks:{color:'#4a5070',font:{family:"'IBM Plex Mono'",size:9},maxTicksLimit:4}, grid:{color:'rgba(255,255,255,0.04)'}, border:{color:'rgba(255,255,255,0.08)'}, min:0 }
+    }
+  }
+});
+
+// ── API key modal ──────────────────────────────────────────────────────────
+const showModal = () => document.getElementById('apikey-modal').classList.remove('hidden');
+const hideModal = () => document.getElementById('apikey-modal').classList.add('hidden');
+
+document.getElementById('apikey-save-btn').addEventListener('click', () => {
+  const v = document.getElementById('apikey-input').value.trim();
+  if (!v) return;
+  apiKey = v;
+  localStorage.setItem('aprsfi_key', v);
+  hideModal();
+  startPolling();
+});
+document.getElementById('apikey-input').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('apikey-save-btn').click(); });
+document.getElementById('apikey-btn').addEventListener('click', () => { document.getElementById('apikey-input').value=apiKey; showModal(); });
+
+// ── Fetch all three balloons in one batch call ─────────────────────────────
+async function fetchAll() {
+  if (!apiKey) return;
+  setStatus('', 'fetching…');
+  const names = Object.keys(BALLOONS).join(',');
+  const aprsUrl = `https://api.aprs.fi/api/get?name=${encodeURIComponent(names)}&what=loc&apikey=${encodeURIComponent(apiKey)}&format=json`;
+  const url = `https://corsproxy.io/?url=${encodeURIComponent(aprsUrl)}`;
+  try {
+    const resp = await fetch(url, { headers:{'User-Agent':'EosBalloonTracker/1.0 (+https://github.com/eos-project)'} });
+    const data = await resp.json();
+    if (data.result !== 'ok') throw new Error(data.description || 'API error');
+
+    for (const e of (data.entries || [])) {
+      const cs  = e.name;
+      if (!tracks[cs]) continue;
+      const lat = parseFloat(e.lat);
+      const lon = parseFloat(e.lng);
+      const alt = parseFloat(e.altitude || 0);
+      const t   = new Date(parseInt(e.lasttime) * 1000);
+      const trk = tracks[cs];
+      const last = trk.points[trk.points.length-1];
+      if (!last || last.time < t) {
+        let vrate=0, speed=0, heading=0;
+        if (last) {
+          const dt = (t - last.time) / 1000;
+          if (dt > 0) {
+            vrate   = (alt - last.alt) / dt;
+            speed   = (haversine(last.lat,last.lon,lat,lon) / dt) * 3.6;
+            heading = bearing(last.lat,last.lon,lat,lon);
+          }
+        }
+        trk.points.push({ lat, lon, alt, time:t, vrate, speed, heading });
+        if (alt > trk.maxAlt) trk.maxAlt = alt;
+        const tab = document.querySelector(`.balloon-tab[data-cs="${cs}"]`);
+        if (tab) tab.classList.add('has-data');
+      }
+    }
+    renderActive();
+    const trk = tracks[activeCS];
+    if (trk.points.length > 0) {
+      const age = Math.round((Date.now() - trk.points[trk.points.length-1].time) / 1000);
+      setStatus(age < 120 ? 'live' : 'stale', `${activeCS} · ${age<60?age+'s':Math.round(age/60)+'m'} ago`);
+    } else {
+      setStatus('', 'no data yet');
+    }
+  } catch(err) {
+    setStatus('error', err.message);
+  }
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderActive() { renderMap(activeCS); renderSidebar(activeCS); renderChart(activeCS); }
+
+function renderMap(cs) {
+  const trk   = tracks[cs];
+  const color = BALLOONS[cs].color;
+  const objs  = mapObjs[cs];
+  if (trk.points.length === 0) return;
+
+  const latlngs = trk.points.map(p => [p.lat, p.lon]);
+  const latest  = trk.points[trk.points.length-1];
+  const phase   = getPhase(cs);
+
+  if (objs.track) objs.track.setLatLngs(latlngs);
+  else objs.track = L.polyline(latlngs, { color, weight:2.5, opacity:0.8 }).addTo(map);
+
+  if (!objs.launch) {
+    objs.launch = L.marker(latlngs[0], {
+      icon: L.divIcon({ html:`<div class="sm-icon">🚀</div>`, className:'', iconAnchor:[12,12] })
+    }).bindPopup(`<b>Launch – ${BALLOONS[cs].name}</b><br>${fmtTime(trk.points[0].time)}`).addTo(map);
+  }
+
+  const emoji = phase==='descending'?'🪂' : phase==='landed'?'📍' : '🎈';
+  const bIcon = L.divIcon({
+    html:`<div class="b-icon${phase==='landed'?' still':''}">${emoji}</div>`,
+    className:'', iconAnchor:[17,17]
+  });
+  const popup = `<b>${cs} – ${BALLOONS[cs].name}</b><br>Alt: <b>${Math.round(latest.alt)} m</b><br>Rate: ${latest.vrate>=0?'+':''}${latest.vrate.toFixed(1)} m/s<br>Phase: ${phase}<br>${fmtTime(latest.time)}`;
+  if (!objs.balloon) {
+    objs.balloon = L.marker([latest.lat,latest.lon],{icon:bIcon}).bindPopup(popup).addTo(map);
+  } else {
+    objs.balloon.setLatLng([latest.lat,latest.lon]);
+    objs.balloon.setIcon(bIcon);
+    objs.balloon.setPopupContent(popup);
+  }
+
+  // Landing prediction
+  if (phase === 'descending') {
+    const pred = predictLanding(cs);
+    if (pred) {
+      const lIcon = L.divIcon({ html:`<div class="sm-icon">🎯</div>`, className:'', iconAnchor:[12,12] });
+      if (!objs.landing) objs.landing = L.marker([pred.lat,pred.lon],{icon:lIcon}).bindPopup('<b>Est. landing</b>').addTo(map);
+      else objs.landing.setLatLng([pred.lat,pred.lon]);
+      document.getElementById('landing-section').style.display = '';
+      document.getElementById('landing-coords').textContent = `${pred.lat.toFixed(4)}°N\n${pred.lon.toFixed(4)}°E\n~${fmtTime(pred.time)}`;
+    }
+  } else {
+    document.getElementById('landing-section').style.display = 'none';
+    if (objs.landing) { map.removeLayer(objs.landing); objs.landing=null; }
+  }
+
+  document.getElementById('empty-state').style.display = 'none';
+  if (trk.points.length <= 3) map.fitBounds(objs.track.getBounds(), { padding:[50,50] });
+  else map.panTo([latest.lat,latest.lon], { animate:true });
+}
+
+function renderSidebar(cs) {
+  const trk  = tracks[cs];
+  if (trk.points.length === 0) return;
+  const pt   = trk.points[trk.points.length-1];
+  const phase = getPhase(cs);
+  const color = BALLOONS[cs].color;
+
+  document.getElementById('stat-alt').innerHTML     = `${Math.round(pt.alt)}<span class="stat-unit">m</span>`;
+  document.getElementById('stat-maxalt').innerHTML  = `${Math.round(trk.maxAlt)}<span class="stat-unit">m</span>`;
+  document.getElementById('stat-vrate').innerHTML   = `${pt.vrate>=0?'+':''}${pt.vrate.toFixed(1)}<span class="stat-unit">m/s</span>`;
+  document.getElementById('stat-speed').innerHTML   = `${pt.speed.toFixed(1)}<span class="stat-unit">km/h</span>`;
+  document.getElementById('stat-heading').innerHTML = `${Math.round(pt.heading)}<span class="stat-unit">°</span>`;
+  document.getElementById('stat-lat').textContent   = pt.lat.toFixed(4);
+  document.getElementById('stat-lon').textContent   = pt.lon.toFixed(4);
+  document.getElementById('stat-time').textContent  = fmtTime(pt.time);
+
+  document.getElementById('alt-bar').style.width      = Math.min(100,(pt.alt/MAX_ALT)*100)+'%';
+  document.getElementById('alt-bar').style.background = color;
+
+  const badge = document.getElementById('phase-badge');
+  badge.textContent = phase; badge.className = 'phase-badge '+phase;
+}
+
+function renderChart(cs) {
+  const trk   = tracks[cs];
+  const color = BALLOONS[cs].color;
+  if (trk.points.length === 0) return;
+  const stride = Math.max(1, Math.floor(trk.points.length/60));
+  const sub    = trk.points.filter((_,i)=>i%stride===0);
+  altChart.data.labels                      = sub.map(p=>fmtTimeShort(p.time));
+  altChart.data.datasets[0].data            = sub.map(p=>Math.round(p.alt));
+  altChart.data.datasets[0].borderColor     = color;
+  altChart.data.datasets[0].backgroundColor = color+'28';
+  altChart.update('none');
+}
+
+// ── Balloon switching ──────────────────────────────────────────────────────
+function selectBalloon(cs) {
+  activeCS = cs;
+  document.querySelectorAll('.balloon-tab').forEach(b => b.classList.toggle('active', b.dataset.cs===cs));
+  renderActive();
+  const trk = tracks[cs];
+  if (trk.points.length > 0) {
+    const age = Math.round((Date.now()-trk.points[trk.points.length-1].time)/1000);
+    setStatus(age<120?'live':'stale', `${cs} · ${age<60?age+'s':Math.round(age/60)+'m'} ago`);
+  } else {
+    setStatus('', 'no data yet for '+cs);
+  }
+}
+
+// ── Physics ────────────────────────────────────────────────────────────────
+function getPhase(cs) {
+  const pts = tracks[cs].points;
+  if (pts.length < 3) return 'waiting';
+  const recent   = pts.slice(-5);
+  const avgVrate = recent.reduce((s,p)=>s+p.vrate,0)/recent.length;
+  const latest   = pts[pts.length-1];
+  if (latest.alt < 300 && avgVrate < 0.5 && pts.length > 5) return 'landed';
+  if (avgVrate < -2) return 'descending';
+  if (tracks[cs].maxAlt > 5000 && avgVrate < 1) return 'burst';
+  return 'ascending';
+}
+
+function predictLanding(cs) {
+  const pts  = tracks[cs].points;
+  if (pts.length < 5) return null;
+  const rec  = pts.slice(-10);
+  const last = pts[pts.length-1];
+  const avgV = rec.reduce((s,p)=>s+p.vrate,0)/rec.length;
+  const avgS = rec.reduce((s,p)=>s+p.speed,0)/rec.length;
+  const avgH = rec.reduce((s,p)=>s+p.heading,0)/rec.length;
+  if (avgV >= 0) return null;
+  const ttl  = last.alt / Math.abs(avgV);
+  const dkm  = (avgS/3600)*ttl;
+  const hr   = avgH*Math.PI/180;
+  const R=6371, φ1=last.lat*Math.PI/180;
+  const lat2 = Math.asin(Math.sin(φ1)*Math.cos(dkm/R)+Math.cos(φ1)*Math.sin(dkm/R)*Math.cos(hr));
+  const lon2 = last.lon*Math.PI/180+Math.atan2(Math.sin(hr)*Math.sin(dkm/R)*Math.cos(φ1),Math.cos(dkm/R)-Math.sin(φ1)*Math.sin(lat2));
+  return { lat:lat2*180/Math.PI, lon:lon2*180/Math.PI, time:new Date(last.time.getTime()+ttl*1000) };
+}
+
+function haversine(a,b,c,d){const R=6371000,φ1=a*Math.PI/180,φ2=c*Math.PI/180,dφ=(c-a)*Math.PI/180,dλ=(d-b)*Math.PI/180,x=Math.sin(dφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+function bearing(a,b,c,d){const φ1=a*Math.PI/180,φ2=c*Math.PI/180,dλ=(d-b)*Math.PI/180;return((Math.atan2(Math.sin(dλ)*Math.cos(φ2),Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(dλ))*180/Math.PI)+360)%360;}
+function fmtTime(d){if(!d||isNaN(d))return'–';return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});}
+function fmtTimeShort(d){if(!d||isNaN(d))return'';return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});}
+function setStatus(s,m){document.getElementById('status-dot').className=s||'';document.getElementById('status-text').textContent=m;}
+
+// ── Polling ────────────────────────────────────────────────────────────────
+function startPolling() {
+  stopPolling();
+  fetchAll();
+  countdown = REFRESH_SEC;
+  refreshTimer = setInterval(()=>{
+    countdown--;
+    document.getElementById('countdown').textContent = countdown>0?`↻ ${countdown}s`:'';
+    if(countdown<=0){fetchAll();countdown=REFRESH_SEC;}
+  },1000);
+}
+function stopPolling(){if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}}
+
+document.getElementById('refresh-btn').addEventListener('click',()=>{if(!apiKey){showModal();return;}fetchAll();countdown=REFRESH_SEC;});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+if (apiKey) { hideModal(); startPolling(); } else { showModal(); }
+</script>
+</body>
+</html>
